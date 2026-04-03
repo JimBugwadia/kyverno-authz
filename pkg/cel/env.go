@@ -78,7 +78,7 @@ func NewEnv(evalMode vpol.EvaluationMode, d dynamic.Interface) (*cel.Env, error)
 	}
 	// create new cel env
 	return base.Extend(
-		http.Lib(http.Context{ContextInterface: http.NewHTTP(nil)}, nil),
+		http.Lib(http.Context{ContextInterface: http.NewHTTP()}, nil),
 		jwt.Lib(),
 		jsoncel.Lib(&impl.JsonImpl{}),
 		mcp.Lib(&impl.MCPImpl{}),
