@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
     outputs:
       commit_sha: ${{ steps.validate.outputs.commit_sha }}
       claim_id: ${{ steps.validate.outputs.claim_id }}
@@ -45,6 +45,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Validate immutable run metadata and main ancestry
         id: validate
         env:
@@ -53,6 +54,7 @@ jobs:
           SUITE_FINGERPRINT: ${{ inputs.suite_fingerprint }}
           ATTEMPT: ${{ inputs.attempt }}
           TRUSTED_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
@@ -60,9 +62,12 @@ jobs:
           [[ "$CLAIM_ID" =~ ^[0-9a-f]{32}$ ]]
           [[ "$SUITE_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
           [[ "$ATTEMPT" == 1 || "$ATTEMPT" == 2 ]]
-          git rev-list --first-parent HEAD | grep -Fxq "$COMMIT_SHA"
+          git rev-list --first-parent HEAD | grep -Fx "$COMMIT_SHA" > /dev/null
           calculated="$(python3 .github/scripts/suite_fingerprint.py .)"
           [[ "$calculated" == "$SUITE_FINGERPRINT" ]]
+          python3 .github/scripts/main_e2e_controller.py start-run \
+            --commit-sha "$COMMIT_SHA" --claim-id "$CLAIM_ID" \
+            --suite-fingerprint "$SUITE_FINGERPRINT" --attempt "$ATTEMPT"
           {
             echo "commit_sha=$COMMIT_SHA"
             echo "claim_id=$CLAIM_ID"

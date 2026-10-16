@@ -54,6 +54,16 @@ def new_state(
 def validate_state(state: Any) -> dict[str, Any]:
     if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
         raise StateError("missing or unsupported durable state")
+    required = {
+        "suite_fingerprint", "bootstrap_sha", "cursor_sha", "health", "failure",
+        "last_pass_sha", "active", "generation", "updated_at",
+    }
+    if not required.issubset(state):
+        raise StateError("durable state is missing required fields")
+    if not isinstance(state["updated_at"], str):
+        raise StateError("invalid state update time")
+    if state["last_pass_sha"] is not None and not valid_sha(state["last_pass_sha"]):
+        raise StateError("invalid last passing commit")
     if not isinstance(state.get("suite_fingerprint"), str) or not FINGERPRINT_RE.fullmatch(
         state["suite_fingerprint"]
     ):
@@ -67,6 +77,12 @@ def validate_state(state: Any) -> dict[str, Any]:
         raise StateError("healthy state has no passing commit")
     active = state.get("active")
     if active is not None:
+        active_required = {
+            "sha", "claim_id", "suite_fingerprint", "attempt",
+            "created_at", "run_id", "run_url",
+        }
+        if not isinstance(active, dict) or not active_required.issubset(active):
+            raise StateError("active claim is missing required fields")
         if not isinstance(active, dict) or not valid_sha(active.get("sha")):
             raise StateError("invalid active claim")
         if not valid_claim(active.get("claim_id")):
@@ -77,6 +93,14 @@ def validate_state(state: Any) -> dict[str, Any]:
             raise StateError("invalid active attempt")
         if not isinstance(active.get("created_at"), str):
             raise StateError("invalid active claim time")
+        dispatch_at = active.get("dispatch_started_at")
+        if dispatch_at is not None:
+            try:
+                parsed = datetime.fromisoformat(dispatch_at)
+                if parsed.tzinfo is None:
+                    raise ValueError("dispatch time has no timezone")
+            except (TypeError, ValueError) as exc:
+                raise StateError("invalid dispatch lease time") from exc
         if active.get("run_id") is not None and (
             not isinstance(active["run_id"], int) or active["run_id"] <= 0
         ):
@@ -189,6 +213,7 @@ def retry_claim(
         attempt=2,
         run_id=None,
         run_url=None,
+        dispatch_started_at=None,
     )
     result["generation"] += 1
     result["updated_at"] = at or now_iso()

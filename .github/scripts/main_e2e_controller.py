@@ -12,7 +12,7 @@ import secrets
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -272,6 +272,90 @@ def dispatch(sha: str, claim_id: str, fingerprint_value: str, attempt: int) -> N
             },
         },
     )
+
+
+def dispatch_claim(active: dict[str, Any]) -> dict[str, Any]:
+    """Lease dispatch before the API call; recover ambiguous requests after 15 minutes."""
+    run = find_run(active["claim_id"], active["attempt"])
+    if run:
+        return mutate_state(lambda current: attach_discovered_run(current, active, run))
+    acquired = False
+
+    def acquire(current: dict[str, Any]) -> dict[str, Any]:
+        nonlocal acquired
+        acquired = False
+        current_active = current.get("active")
+        if not same_attempt(current_active, active) or current_active.get("run_id"):
+            return current
+        now = datetime.now(timezone.utc)
+        started = current_active.get("dispatch_started_at")
+        if started and now - datetime.fromisoformat(started) < timedelta(minutes=15):
+            return current
+        result = dict(current)
+        result["active"] = dict(current_active, dispatch_started_at=now.isoformat())
+        result["generation"] += 1
+        result["updated_at"] = now.isoformat()
+        acquired = True
+        return result
+
+    state = mutate_state(acquire)
+    if not acquired:
+        print("Dispatch already leased or attached; awaiting run discovery.")
+        return state
+    dispatch(active["sha"], active["claim_id"], active["suite_fingerprint"], active["attempt"])
+    time.sleep(3)
+    run = find_run(active["claim_id"], active["attempt"])
+    if run:
+        return mutate_state(lambda current: attach_discovered_run(current, active, run))
+    print("Dispatch accepted but not visible yet; durable lease prevents duplicate dispatch.")
+    return state
+
+
+def same_attempt(left: dict[str, Any] | None, right: dict[str, Any]) -> bool:
+    return bool(left) and all(
+        left.get(key) == right.get(key)
+        for key in ("sha", "claim_id", "suite_fingerprint", "attempt")
+    )
+
+
+def attach_discovered_run(
+    state: dict[str, Any], active: dict[str, Any], run: dict[str, Any]
+) -> dict[str, Any]:
+    if not same_attempt(state.get("active"), active):
+        return state
+    expected = (
+        active["sha"], active["claim_id"], str(active["attempt"]), active["suite_fingerprint"]
+    )
+    if parse_run_title(run) != expected:
+        raise ControllerError("discovered workflow does not match the active attempt")
+    if state["active"].get("run_id") not in (None, run["id"]):
+        return state
+    return attach_run(state, active["claim_id"], run["id"], run.get("html_url", ""))
+
+
+def start_run(sha: str, claim_id: str, fingerprint_value: str, attempt: int) -> None:
+    """Bind one workflow run atomically before any tested code executes."""
+    run_id_text = os.environ.get("GITHUB_RUN_ID", "")
+    if os.environ.get("GITHUB_REF") != "refs/heads/main" or not run_id_text.isdecimal():
+        raise ControllerError("run registration requires a main workflow run")
+    run_id = int(run_id_text)
+    expected = {
+        "sha": sha, "claim_id": claim_id,
+        "suite_fingerprint": fingerprint_value, "attempt": attempt,
+    }
+
+    def register(state: dict[str, Any]) -> dict[str, Any]:
+        active = state.get("active")
+        if not same_attempt(active, expected):
+            raise ControllerError("workflow run no longer matches the active attempt")
+        if active.get("run_id") not in (None, run_id):
+            raise ControllerError("another workflow already owns this attempt; refusing duplicate matrix")
+        return attach_run(
+            state, claim_id, run_id,
+            f"https://github.com/{repo()}/actions/runs/{run_id}",
+        )
+
+    mutate_state(register)
 
 
 def list_prs() -> list[dict[str, Any]]:
@@ -568,18 +652,7 @@ def report_completed_run(
     new_value = mutate_state(apply)
     active = new_value.get("active")
     if active and active.get("claim_id") == claim_id and active.get("attempt") == 2 and not active.get("run_id"):
-        dispatch(active["sha"], claim_id, active["suite_fingerprint"], 2)
-        time.sleep(3)
-        retry_run = find_run(claim_id, 2)
-        if retry_run:
-            new_value = mutate_state(
-                lambda current: attach_run(
-                    current,
-                    claim_id,
-                    retry_run["id"],
-                    retry_run.get("html_url", ""),
-                )
-            )
+        new_value = dispatch_claim(active)
     synchronize_health(new_value)
     return new_value
 
@@ -631,7 +704,7 @@ def close_resolved_issue(state: dict[str, Any]) -> None:
 def synchronize_health(state: dict[str, Any]) -> None:
     state = update_suite_definition(state, suite_fingerprint())
     failure = state.get("failure")
-    if state["health"] == "unhealthy" and failure.get("pr_lookup_pending"):
+    if state["health"] == "unhealthy" and failure and failure.get("pr_lookup_pending"):
         try:
             associated_prs = prs_for_commit(failure["sha"])
         except ControllerError:
@@ -706,32 +779,10 @@ def scheduler(mode: str, base_sha: str | None) -> None:
             else:
                 if active.get("run_id") != run.get("id"):
                     state = mutate_state(
-                        lambda current: attach_run(
-                            current,
-                            active["claim_id"],
-                            run["id"],
-                            run.get("html_url", ""),
-                        )
+                        lambda current: attach_discovered_run(current, active, run)
                     )
         else:
-            dispatch(
-                active["sha"],
-                active["claim_id"],
-                active["suite_fingerprint"],
-                active["attempt"],
-            )
-            time.sleep(3)
-            run = find_run(active["claim_id"], active["attempt"])
-            if run:
-                state = mutate_state(
-                    lambda current: attach_run(
-                        current,
-                        active["claim_id"],
-                        run["id"],
-                        run.get("html_url", ""),
-                    )
-                )
-        state_value = state_contents()
+            dispatch_claim(active)
         return
 
     commits = history
@@ -739,15 +790,7 @@ def scheduler(mode: str, base_sha: str | None) -> None:
     claimed = mutate_state(lambda current: claim_commit(current, commits, claim_id))
     active = claimed.get("active")
     if active and active["claim_id"] == claim_id:
-        dispatch(active["sha"], claim_id, active["suite_fingerprint"], active["attempt"])
-        time.sleep(3)
-        run = find_run(claim_id, active["attempt"])
-        if run:
-            claimed = mutate_state(
-                lambda current: attach_run(
-                    current, claim_id, run["id"], run.get("html_url", "")
-                )
-            )
+        claimed = dispatch_claim(active)
     active = claimed.get("active")
     if active and active.get("claim_id") == claim_id:
         remaining = len(history) - history.index(active["sha"]) - 1
@@ -785,34 +828,13 @@ def reconcile_health() -> None:
         )
         if run and not active.get("run_id"):
             state = mutate_state(
-                lambda current: attach_run(
-                    current,
-                    active["claim_id"],
-                    run["id"],
-                    run.get("html_url", ""),
-                )
+                lambda current: attach_discovered_run(current, active, run)
             )
         if run and run.get("status") == "completed":
             report_completed_run(run["id"])
             return
         if not run:
-            dispatch(
-                active["sha"],
-                active["claim_id"],
-                active["suite_fingerprint"],
-                active["attempt"],
-            )
-            time.sleep(3)
-            run = find_run(active["claim_id"], active["attempt"])
-            if run:
-                state = mutate_state(
-                    lambda current: attach_run(
-                        current,
-                        active["claim_id"],
-                        run["id"],
-                        run.get("html_url", ""),
-                    )
-                )
+            state = dispatch_claim(active)
     synchronize_health(state)
 
 
@@ -926,6 +948,11 @@ def main() -> int:
     report.add_argument("--terminal-dir")
     pr = sub.add_parser("pull-request-status")
     pr.add_argument("--event", required=True)
+    start = sub.add_parser("start-run")
+    start.add_argument("--commit-sha", required=True)
+    start.add_argument("--claim-id", required=True)
+    start.add_argument("--suite-fingerprint", required=True)
+    start.add_argument("--attempt", type=int, choices=(1, 2), required=True)
     sub.add_parser("reconcile-health")
     sub.add_parser("refresh-statuses")
     args = parser.parse_args()
@@ -940,6 +967,8 @@ def main() -> int:
             reconcile_health()
         elif args.command == "refresh-statuses":
             refresh_statuses()
+        elif args.command == "start-run":
+            start_run(args.commit_sha, args.claim_id, args.suite_fingerprint, args.attempt)
     except (ControllerError, StateError, subprocess.CalledProcessError) as exc:
         print(f"main E2E controller error: {str(exc)[:1200]}", file=sys.stderr)
         return 1

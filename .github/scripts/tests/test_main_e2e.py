@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -51,6 +52,22 @@ def retried(state):
 
 
 class MainE2EStateTests(unittest.TestCase):
+    def test_missing_state_or_active_fields_raise_state_error(self):
+        state = initialized()
+        for key in state:
+            with self.subTest(field=key):
+                malformed = dict(state)
+                del malformed[key]
+                with self.assertRaises(StateError):
+                    validate_state(malformed)
+        state = claimed(state)
+        for key in state["active"]:
+            with self.subTest(active_field=key):
+                malformed = dict(state, active=dict(state["active"]))
+                del malformed["active"][key]
+                with self.assertRaises(StateError):
+                    validate_state(malformed)
+
     def test_no_commits_does_not_change_cursor_or_health(self):
         state = initialized()
         self.assertIs(claim_commit(state, [BASE], CLAIM), state)
@@ -352,17 +369,112 @@ class ControllerTests(unittest.TestCase):
             mock.patch.object(controller, "suite_fingerprint", return_value=SUITE_FINGERPRINT),
             mock.patch.object(controller, "state_contents", return_value=(state, "blob")),
             mock.patch.object(controller, "store_state", side_effect=lambda value, _: stored.append(value)),
-            mock.patch.object(controller, "dispatch") as dispatch,
-            mock.patch.object(controller, "find_run", return_value=None),
-            mock.patch.object(controller.time, "sleep"),
+            mock.patch.object(
+                controller, "dispatch_claim",
+                side_effect=lambda active: dict(state, active=active),
+            ) as dispatch,
             mock.patch.object(controller, "synchronize_health"),
         ):
             controller.report_completed_run(12345)
         self.assertEqual(len(stored), 1)
         self.assertEqual(stored[0]["active"]["attempt"], 2)
         self.assertIsNone(stored[0]["active"]["run_id"])
-        dispatch.assert_called_once_with(FIRST, CLAIM, SUITE_FINGERPRINT, 2)
+        dispatch.assert_called_once_with(stored[0]["active"])
         prs.assert_not_called()
+
+    def test_dispatch_lease_prevents_overlap_and_delayed_discovery_duplicates(self):
+        state = claim_commit(initialized(), [BASE, FIRST], CLAIM)
+        current = [state]
+        def save(value, blob):
+            current[0] = value
+        with (
+            mock.patch.object(controller, "state_contents", side_effect=lambda: (current[0], "blob")),
+            mock.patch.object(controller, "store_state", side_effect=save),
+            mock.patch.object(controller, "find_run", return_value=None),
+            mock.patch.object(controller, "dispatch") as dispatch,
+            mock.patch.object(controller.time, "sleep"),
+        ):
+            controller.dispatch_claim(state["active"])
+            controller.dispatch_claim(state["active"])
+        dispatch.assert_called_once_with(FIRST, CLAIM, SUITE_FINGERPRINT, 1)
+        self.assertIsNotNone(current[0]["active"]["dispatch_started_at"])
+
+    def test_dispatch_cas_loser_does_not_send_a_duplicate(self):
+        state = claim_commit(initialized(), [BASE, FIRST], CLAIM)
+        competing = dict(state, active=dict(
+            state["active"], dispatch_started_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        with (
+            mock.patch.object(
+                controller, "state_contents",
+                side_effect=[(state, "blob"), (competing, "new-blob")],
+            ),
+            mock.patch.object(controller, "store_state", side_effect=controller.ControllerError("409 conflict")),
+            mock.patch.object(controller, "find_run", return_value=None),
+            mock.patch.object(controller, "dispatch") as dispatch,
+        ):
+            controller.dispatch_claim(state["active"])
+        dispatch.assert_not_called()
+
+    def test_ambiguous_dispatch_failure_is_leased_then_recovers(self):
+        state = claim_commit(initialized(), [BASE, FIRST], CLAIM)
+        current = [state]
+        def save(value, blob):
+            current[0] = value
+        with (
+            mock.patch.object(controller, "state_contents", side_effect=lambda: (current[0], "blob")),
+            mock.patch.object(controller, "store_state", side_effect=save),
+            mock.patch.object(controller, "find_run", return_value=None),
+            mock.patch.object(
+                controller, "dispatch",
+                side_effect=[controller.ControllerError("API timeout"), None],
+            ) as dispatch,
+            mock.patch.object(controller.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(controller.ControllerError, "API timeout"):
+                controller.dispatch_claim(state["active"])
+            controller.dispatch_claim(state["active"])
+            self.assertEqual(dispatch.call_count, 1)
+            current[0]["active"]["dispatch_started_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=16)
+            ).isoformat()
+            controller.dispatch_claim(state["active"])
+        self.assertEqual(dispatch.call_count, 2)
+
+    def test_duplicate_run_cannot_claim_a_matrix_after_lease_recovery(self):
+        state = claim_commit(initialized(), [BASE, FIRST], CLAIM)
+        current = [state]
+        def save(value, blob):
+            current[0] = value
+        with (
+            mock.patch.dict(os.environ, {"GITHUB_RUN_ID": "12345", "GITHUB_REF": "refs/heads/main"}),
+            mock.patch.object(controller, "state_contents", side_effect=lambda: (current[0], "blob")),
+            mock.patch.object(controller, "store_state", side_effect=save),
+        ):
+            controller.start_run(FIRST, CLAIM, SUITE_FINGERPRINT, 1)
+            os.environ["GITHUB_RUN_ID"] = "23456"
+            with self.assertRaisesRegex(controller.ControllerError, "another workflow already owns"):
+                controller.start_run(FIRST, CLAIM, SUITE_FINGERPRINT, 1)
+        self.assertEqual(current[0]["active"]["run_id"], 12345)
+
+    def test_discovery_does_not_overwrite_retry_or_existing_run_owner(self):
+        first = claimed(initialized())
+        retry = retried(first)
+        run = {
+            "id": 98765, "html_url": RUN_URL,
+            "display_title": f"Main E2E {FIRST} claim {CLAIM} attempt 1 suite {SUITE_FINGERPRINT}",
+        }
+        self.assertIs(controller.attach_discovered_run(retry, first["active"], run), retry)
+        self.assertIs(controller.attach_discovered_run(first, first["active"], run), first)
+
+    def test_malformed_state_is_reported_as_controller_error(self):
+        malformed = initialized()
+        del malformed["active"]
+        import base64
+        contents = base64.b64encode(json.dumps(malformed).encode()).decode()
+        with mock.patch.object(controller, "api", return_value={"sha": "blob", "content": contents}):
+            with self.assertRaisesRegex(controller.ControllerError, "durable state JSON is invalid"):
+                controller.state_contents()
 
     def test_pr_association_api_failure_is_recorded_and_retried(self):
         state = retried(claimed(initialized()))

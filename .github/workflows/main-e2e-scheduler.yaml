@@ -22,7 +22,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: main-e2e-scheduler
+  group: main-e2e-controller
   cancel-in-progress: false
 
 jobs:

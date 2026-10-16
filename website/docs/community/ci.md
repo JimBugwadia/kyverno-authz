@@ -26,6 +26,13 @@ It does not sample only the newest commit and skip intermediate integrations.
 GitHub can delay scheduled workflows; the persisted backlog must survive missed
 ticks, workflow cancellation, and runner outages.
 
+Scheduling and reporting share a controller concurrency group. Before sending
+a dispatch request, the controller persists a 15-minute lease so delayed run
+discovery cannot immediately trigger another dispatch. Expired leases allow
+recovery after an interrupted or ambiguous request. A separate trusted
+registration job atomically binds the run to its claim before building images
+or executing tests; a duplicate workflow cannot launch another matrix.
+
 Each commit is tested at its immutable SHA against all five Chainsaw suites
 on all four configured Kubernetes versions:
 
@@ -80,6 +87,14 @@ PR-health reporting reads PR metadata only and must never execute code from a
 fork or PR head with a write-capable token. E2E jobs execute the selected commit
 with read-only permissions. Trusted control jobs manage durable state, issues,
 and commit statuses separately from the tested code.
+
+The registration job runs only trusted controller code with state-write
+permission. It does not execute the tested commit. Checkouts in the source
+build and test jobs disable credential persistence, including the neighboring
+trusted-tools checkout, so tested code cannot read a saved checkout token.
+Dispatch uses the default-branch workflow, while execution pins its resolved
+GitHub SHA and verifies the claimed suite fingerprint before running the
+matrix. A changed suite cannot silently satisfy an older claim.
 
 Workflow logs and artifacts can contain untrusted application output. Incident
 issues should link to diagnostics rather than copy arbitrary logs, credentials,
