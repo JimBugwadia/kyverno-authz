@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/ext"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/ext"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -70,7 +70,7 @@ func runGetterTest[T any](
 		if mcpRequest != nil {
 			reqVal = mcpRequest
 		} else {
-			reqVal = struct{}{}
+			reqVal = "not-an-mcp-request" // cel.dev/cel-go rejects unregistered structs earlier
 		}
 		reqRefVal := impl.NativeToValue(reqVal)
 		keyRefVal := impl.NativeToValue(key)
@@ -165,7 +165,7 @@ func TestImpl_mcp_parse(t *testing.T) {
 			if tt.mcpImpl != nil {
 				mcpVal = MCP{tt.mcpImpl}
 			} else {
-				mcpVal = struct{}{} // trigger conversion error
+				mcpVal = "not-an-mcp" // trigger conversion error
 			}
 			mcpRefVal := impl.NativeToValue(mcpVal)
 			valueRefVal := impl.NativeToValue(tt.value)

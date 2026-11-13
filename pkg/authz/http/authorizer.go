@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/cel-go/cel"
+	"cel.dev/cel-go/cel"
 	httpcel "github.com/kyverno/kyverno-authz/pkg/cel/libs/authz/http"
 	httpserver "github.com/kyverno/kyverno-authz/pkg/cel/libs/httpserver"
 	"github.com/kyverno/kyverno-authz/pkg/cel/utils"

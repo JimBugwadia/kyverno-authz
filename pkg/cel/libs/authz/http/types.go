@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/google/cel-go/common/types"
+	"cel.dev/cel-go/common/types"
 	celimpl "github.com/kyverno/kyverno-authz/pkg/cel/impl"
 	mcplibs "github.com/kyverno/kyverno-authz/pkg/cel/libs/mcp"
 )

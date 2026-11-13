@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/google/cel-go/cel"
+	"cel.dev/cel-go/cel"
 	"github.com/kyverno/kyverno-authz/apis"
 	kcel "github.com/kyverno/kyverno-authz/pkg/cel"
 	httpcel "github.com/kyverno/kyverno-authz/pkg/cel/libs/authz/http"

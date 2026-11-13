@@ -2,9 +2,9 @@ package envoy
 
 import (
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	status "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )

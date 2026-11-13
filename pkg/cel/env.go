@@ -3,8 +3,8 @@ package cel
 import (
 	"fmt"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/ext"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/ext"
 	vpol "github.com/kyverno/api/api/policies.kyverno.io/v1"
 	"github.com/kyverno/kyverno-authz/apis"
 	impl "github.com/kyverno/kyverno-authz/pkg/cel/impl"
@@ -32,7 +32,7 @@ func NewBaseEnv() (*cel.Env, error) {
 		// register common libs
 		cel.OptionalTypes(),
 		ext.Bindings(),
-		ext.Encoders(),
+		ext.Encoders(ext.EncodersVersion(1)),
 		ext.Lists(),
 		ext.Math(),
 		ext.Protos(),

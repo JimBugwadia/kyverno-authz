@@ -1,8 +1,8 @@
 package json
 
 import (
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	"github.com/kyverno/kyverno-authz/pkg/cel/utils"
 )
 

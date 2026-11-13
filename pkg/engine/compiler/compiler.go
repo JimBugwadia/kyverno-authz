@@ -3,8 +3,8 @@ package compiler
 import (
 	"fmt"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
 	v1 "github.com/kyverno/api/api/policies.kyverno.io/v1"
 	"github.com/kyverno/kyverno-authz/apis"
 	authzcel "github.com/kyverno/kyverno-authz/pkg/cel"

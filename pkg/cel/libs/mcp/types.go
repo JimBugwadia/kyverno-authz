@@ -3,7 +3,7 @@ package mcp
 import (
 	"strconv"
 
-	"github.com/google/cel-go/common/types"
+	"cel.dev/cel-go/common/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

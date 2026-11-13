@@ -3,8 +3,8 @@ package jwt
 import (
 	"time"
 
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	jwklib "github.com/kyverno/kyverno-authz/pkg/cel/libs/jwk"
 	"github.com/kyverno/kyverno-authz/pkg/cel/utils"
 	"github.com/lestrrat-go/jwx/v3/jwk"
