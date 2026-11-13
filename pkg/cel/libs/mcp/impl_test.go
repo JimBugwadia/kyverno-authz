@@ -143,7 +143,7 @@ func TestImpl_mcp_parse(t *testing.T) {
 			name:        "cannot convert mcp native type",
 			mcpImpl:     nil, // purposely pass wrong type
 			value:       `{"foo":"bar"}`,
-			want:        "type conversion error",
+			want:        "conversion", // message differs between cel-go module versions
 			expectError: true,
 		},
 		{
@@ -238,7 +238,7 @@ func TestImpl_mcp_get_string(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "name",
 			defaultValue: "default",
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -320,7 +320,7 @@ func TestImpl_mcp_get_int(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "count",
 			defaultValue: 0,
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -402,7 +402,7 @@ func TestImpl_mcp_get_float(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "double",
 			defaultValue: 0.0,
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -484,7 +484,7 @@ func TestImpl_mcp_get_bool(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "enabled",
 			defaultValue: false,
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -566,7 +566,7 @@ func TestImpl_mcp_get_string_slice(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "tags",
 			defaultValue: []string{},
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -648,7 +648,7 @@ func TestImpl_mcp_get_int_slice(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "numbers",
 			defaultValue: []int{},
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -730,7 +730,7 @@ func TestImpl_mcp_get_float_slice(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "values",
 			defaultValue: []float64{},
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{
@@ -812,7 +812,7 @@ func TestImpl_mcp_get_bool_slice(t *testing.T) {
 			mcpRequest:   nil,
 			key:          "flags",
 			defaultValue: []bool{},
-			want:         "type conversion error",
+			want:         "conversion", // message differs between cel-go module versions
 			expectError:  true,
 		},
 		{

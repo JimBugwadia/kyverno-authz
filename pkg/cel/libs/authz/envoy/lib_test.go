@@ -4,10 +4,10 @@ import (
 	"reflect"
 	"testing"
 
-	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/interpreter"
+	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"github.com/kyverno/kyverno-authz/pkg/cel/libs/authz/envoy"
 	"github.com/stretchr/testify/assert"
 	status "google.golang.org/genproto/googleapis/rpc/status"

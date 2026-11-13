@@ -1,11 +1,11 @@
 package envoy
 
 import (
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	typesv3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
-	"cel.dev/cel-go/common/types"
-	"cel.dev/cel-go/common/types/ref"
 	"github.com/kyverno/kyverno-authz/pkg/cel/utils"
 	status "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
